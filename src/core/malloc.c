@@ -34,6 +34,11 @@ FILE_LICENCE ( GPL2_OR_LATER_OR_UBDL );
 #include <ipxe/malloc.h>
 #include <valgrind/memcheck.h>
 
+#include <ipxe/efi/efi.h>
+#include <ipxe/efi/Library/BaseLib.h>
+#include <ipxe/efi/Library/SynchronizationLib.h>
+SPIN_LOCK mMemLock;
+
 /** @file
  *
  * Dynamic memory allocation
@@ -263,6 +268,8 @@ static void discard_all_cache ( void ) {
 	} while ( discarded );
 }
 
+extern volatile unsigned char loop;
+
 /**
  * Allocate a memory block
  *
@@ -277,119 +284,34 @@ static void discard_all_cache ( void ) {
  * @c align must be a power of two.  @c size may not be zero.
  */
 void * alloc_memblock ( size_t size, size_t align, size_t offset ) {
-	struct memory_block *block;
-	size_t align_mask;
-	size_t actual_size;
-	size_t pre_size;
-	size_t post_size;
-	struct memory_block *pre;
-	struct memory_block *post;
-	unsigned int discarded;
+	EFI_BOOT_SERVICES *bs = efi_systab->BootServices;
+	EFI_STATUS efirc;
 	void *ptr;
+	void *newptr;
+	uint32_t stub;
 
-	/* Sanity checks */
-	assert ( size != 0 );
-	assert ( ( align == 0 ) || ( ( align & ( align - 1 ) ) == 0 ) );
-	valgrind_make_blocks_defined();
-	check_blocks();
-
-	/* Round up size to multiple of MIN_MEMBLOCK_SIZE and
-	 * calculate alignment mask.
-	 */
-	actual_size = ( ( size + MIN_MEMBLOCK_SIZE - 1 ) &
-			~( MIN_MEMBLOCK_SIZE - 1 ) );
-	if ( ! actual_size ) {
-		/* The requested size is not permitted to be zero.  A
-		 * zero result at this point indicates that either the
-		 * original requested size was zero, or that unsigned
-		 * integer overflow has occurred.
-		 */
-		ptr = NULL;
-		goto done;
+	efirc = bs->AllocatePool ( EfiBootServicesData, size + align + sizeof(stub),
+					  &ptr );
+	if (efirc != 0) {
+		while (loop) {}
+		return NULL;
 	}
-	assert ( actual_size >= size );
-	align_mask = ( ( align - 1 ) | ( MIN_MEMBLOCK_SIZE - 1 ) );
-
-	DBGC2 ( &heap, "Allocating %#zx (aligned %#zx+%zx)\n",
-		size, align, offset );
-	while ( 1 ) {
-		/* Search through blocks for the first one with enough space */
-		list_for_each_entry ( block, &free_blocks, list ) {
-			pre_size = ( ( offset - virt_to_phys ( block ) )
-				     & align_mask );
-			if ( ( block->size < pre_size ) ||
-			     ( ( block->size - pre_size ) < actual_size ) )
-				continue;
-			post_size = ( block->size - pre_size - actual_size );
-			/* Split block into pre-block, block, and
-			 * post-block.  After this split, the "pre"
-			 * block is the one currently linked into the
-			 * free list.
-			 */
-			pre   = block;
-			block = ( ( ( void * ) pre   ) + pre_size );
-			post  = ( ( ( void * ) block ) + actual_size );
-			DBGC2 ( &heap, "[%p,%p) -> [%p,%p) + [%p,%p)\n", pre,
-				( ( ( void * ) pre ) + pre->size ), pre, block,
-				post, ( ( ( void * ) pre ) + pre->size ) );
-			/* If there is a "post" block, add it in to
-			 * the free list.  Leak it if it is too small
-			 * (which can happen only at the very end of
-			 * the heap).
-			 */
-			if ( post_size >= MIN_MEMBLOCK_SIZE ) {
-				VALGRIND_MAKE_MEM_UNDEFINED ( post,
-							      sizeof ( *post ));
-				post->size = post_size;
-				list_add ( &post->list, &pre->list );
-			}
-			/* Shrink "pre" block, leaving the main block
-			 * isolated and no longer part of the free
-			 * list.
-			 */
-			pre->size = pre_size;
-			/* If there is no "pre" block, remove it from
-			 * the list.  Also remove it (i.e. leak it) if
-			 * it is too small, which can happen only at
-			 * the very start of the heap.
-			 */
-			if ( pre_size < MIN_MEMBLOCK_SIZE ) {
-				list_del ( &pre->list );
-				VALGRIND_MAKE_MEM_NOACCESS ( pre,
-							     sizeof ( *pre ) );
-			}
-			/* Update memory usage statistics */
-			freemem -= actual_size;
-			usedmem += actual_size;
-			if ( usedmem > maxusedmem )
-				maxusedmem = usedmem;
-			/* Return allocated block */
-			DBGC2 ( &heap, "Allocated [%p,%p)\n", block,
-				( ( ( void * ) block ) + size ) );
-			ptr = block;
-			VALGRIND_MAKE_MEM_UNDEFINED ( ptr, size );
-			goto done;
-		}
-
-		/* Try discarding some cached data to free up memory */
-		DBGC ( &heap, "Attempting discard for %#zx (aligned %#zx+%zx), "
-		       "used %zdkB\n", size, align, offset, ( usedmem >> 10 ) );
-		valgrind_make_blocks_noaccess();
-		discarded = discard_cache();
-		valgrind_make_blocks_defined();
-		check_blocks();
-		if ( ! discarded ) {
-			/* Nothing available to discard */
-			DBGC ( &heap, "Failed to allocate %#zx (aligned "
-			       "%#zx)\n", size, align );
-			ptr = NULL;
-			goto done;
-		}
+	if ((align != 0) && ((uint64_t)ptr & (align - 1)) != 0) {
+		newptr = (void*)(((uint64_t)ptr + sizeof (stub) + align - 1) & (~(align - 1)));
+		stub = (uint64_t)newptr - (uint64_t)ptr;
+		memcpy ((uint8_t*)newptr-4, &stub, sizeof(stub));
+		ptr = newptr;
 	}
-
- done:
-	check_blocks();
-	valgrind_make_blocks_noaccess();
+	if ((size + align) > 0x1000) {
+		while (loop) {}
+	}
+	if (offset) {
+		while (loop) {}
+		ptr = (void*)((uint64_t)ptr + offset);
+	}
+	if (ptr == NULL) {
+		while (loop) {}
+	}
 	return ptr;
 }
 
@@ -402,101 +324,32 @@ void * alloc_memblock ( size_t size, size_t align, size_t offset ) {
  * If @c ptr is NULL, no action is taken.
  */
 void free_memblock ( void *ptr, size_t size ) {
-	struct memory_block *freeing;
-	struct memory_block *block;
-	struct memory_block *tmp;
-	size_t actual_size;
-	ssize_t gap_before;
-	ssize_t gap_after = -1;
-
-	/* Allow for ptr==NULL */
-	if ( ! ptr )
-		return;
-	VALGRIND_MAKE_MEM_NOACCESS ( ptr, size );
-
-	/* Sanity checks */
-	valgrind_make_blocks_defined();
-	check_blocks();
-
-	/* Round up size to match actual size that alloc_memblock()
-	 * would have used.
-	 */
-	assert ( size != 0 );
-	actual_size = ( ( size + MIN_MEMBLOCK_SIZE - 1 ) &
-			~( MIN_MEMBLOCK_SIZE - 1 ) );
-	freeing = ptr;
-	VALGRIND_MAKE_MEM_UNDEFINED ( freeing, sizeof ( *freeing ) );
-	DBGC2 ( &heap, "Freeing [%p,%p)\n",
-		freeing, ( ( ( void * ) freeing ) + size ) );
-
-	/* Check that this block does not overlap the free list */
-	if ( ASSERTING ) {
-		list_for_each_entry ( block, &free_blocks, list ) {
-			if ( ( ( ( void * ) block ) <
-			       ( ( void * ) freeing + actual_size ) ) &&
-			     ( ( void * ) freeing <
-			       ( ( void * ) block + block->size ) ) ) {
-				assert ( 0 );
-				DBGC ( &heap, "Double free of [%p,%p) "
-				       "overlapping [%p,%p) detected from %p\n",
-				       freeing,
-				       ( ( ( void * ) freeing ) + size ), block,
-				       ( ( void * ) block + block->size ),
-				       __builtin_return_address ( 0 ) );
-			}
-		}
+	EFI_BOOT_SERVICES *bs = efi_systab->BootServices;
+	EFI_STATUS efirc;
+	uint32_t stub;
+	void *real_ptr;
+	if (size == 0) {
+		assert (FALSE);
+while (loop) {}
 	}
-
-	/* Insert/merge into free list */
-	freeing->size = actual_size;
-	list_for_each_entry_safe ( block, tmp, &free_blocks, list ) {
-		/* Calculate gaps before and after the "freeing" block */
-		gap_before = ( ( ( void * ) freeing ) - 
-			       ( ( ( void * ) block ) + block->size ) );
-		gap_after = ( ( ( void * ) block ) - 
-			      ( ( ( void * ) freeing ) + freeing->size ) );
-		/* Merge with immediately preceding block, if possible */
-		if ( gap_before == 0 ) {
-			DBGC2 ( &heap, "[%p,%p) + [%p,%p) -> [%p,%p)\n", block,
-				( ( ( void * ) block ) + block->size ), freeing,
-				( ( ( void * ) freeing ) + freeing->size ),
-				block,
-				( ( ( void * ) freeing ) + freeing->size ) );
-			block->size += actual_size;
-			list_del ( &block->list );
-			VALGRIND_MAKE_MEM_NOACCESS ( freeing,
-						     sizeof ( *freeing ) );
-			freeing = block;
-		}
-		/* Stop processing as soon as we reach a following block */
-		if ( gap_after >= 0 )
-			break;
+	memcpy (&stub, (uint8_t*)ptr-4, sizeof(stub));
+	real_ptr = (uint8_t*)ptr - stub;
+	efirc = bs->FreePool ( real_ptr );
+	if (efirc != 0) {
+		assert (FALSE);
+while (loop) {}
 	}
-
-	/* Insert before the immediately following block.  If
-	 * possible, merge the following block into the "freeing"
-	 * block.
-	 */
-	DBGC2 ( &heap, "[%p,%p)\n",
-		freeing, ( ( ( void * ) freeing ) + freeing->size ) );
-	list_add_tail ( &freeing->list, &block->list );
-	if ( gap_after == 0 ) {
-		DBGC2 ( &heap, "[%p,%p) + [%p,%p) -> [%p,%p)\n", freeing,
-			( ( ( void * ) freeing ) + freeing->size ), block,
-			( ( ( void * ) block ) + block->size ), freeing,
-			( ( ( void * ) block ) + block->size ) );
-		freeing->size += block->size;
-		list_del ( &block->list );
-		VALGRIND_MAKE_MEM_NOACCESS ( block, sizeof ( *block ) );
-	}
-
-	/* Update memory usage statistics */
-	freemem += actual_size;
-	usedmem -= actual_size;
-
-	check_blocks();
-	valgrind_make_blocks_noaccess();
 }
+
+typedef struct {
+  UINT32             Signature;
+  UINT32             Reserved;
+  EFI_MEMORY_TYPE    Type;
+  UINTN              Size;
+  CHAR8              Data[1];
+} POOL_HEAD;
+#define POOL_HEAD_SIGNATURE      SIGNATURE_32('p','h','d','0')
+#define POOLPAGE_HEAD_SIGNATURE  SIGNATURE_32('p','h','d','1')
 
 /**
  * Reallocate memory
@@ -519,55 +372,54 @@ void free_memblock ( void *ptr, size_t size ) {
  * memory block.
  */
 void * realloc ( void *old_ptr, size_t new_size ) {
-	struct autosized_block *old_block;
-	struct autosized_block *new_block;
-	size_t old_total_size;
-	size_t new_total_size;
-	size_t old_size;
-	void *new_ptr = NOWHERE;
+	EFI_BOOT_SERVICES *bs = efi_systab->BootServices;
+	EFI_STATUS efirc;
+	void *new_ptr;
+  POOL_HEAD  *Head;
 
-	/* Allocate new memory if necessary.  If allocation fails,
-	 * return without touching the old block.
-	 */
-	if ( new_size ) {
-		new_total_size = ( new_size +
-				   offsetof ( struct autosized_block, data ) );
-		if ( new_total_size < new_size )
-			return NULL;
-		new_block = alloc_memblock ( new_total_size, 1, 0 );
-		if ( ! new_block )
-			return NULL;
-		new_block->size = new_total_size;
-		VALGRIND_MAKE_MEM_NOACCESS ( &new_block->size,
-					     sizeof ( new_block->size ) );
-		new_ptr = &new_block->data;
-		VALGRIND_MALLOCLIKE_BLOCK ( new_ptr, new_size, 0, 0 );
-	}
-	
-	/* Copy across relevant part of the old data region (if any),
-	 * then free it.  Note that at this point either (a) new_ptr
-	 * is valid, or (b) new_size is 0; either way, the memcpy() is
-	 * valid.
-	 */
-	if ( old_ptr && ( old_ptr != NOWHERE ) ) {
-		old_block = container_of ( old_ptr, struct autosized_block,
-					   data );
-		VALGRIND_MAKE_MEM_DEFINED ( &old_block->size,
-					    sizeof ( old_block->size ) );
-		old_total_size = old_block->size;
-		assert ( old_total_size != 0 );
-		old_size = ( old_total_size -
-			     offsetof ( struct autosized_block, data ) );
-		memcpy ( new_ptr, old_ptr,
-			 ( ( old_size < new_size ) ? old_size : new_size ) );
-		VALGRIND_FREELIKE_BLOCK ( old_ptr, 0 );
-		free_memblock ( old_block, old_total_size );
+	if (new_size == 0 && old_ptr == NULL) {
+		assert (FALSE);
+while (loop) {}
+		return NULL;
 	}
 
-	if ( ASSERTED ) {
-		DBGC ( &heap, "Possible memory corruption detected from %p\n",
-		       __builtin_return_address ( 0 ) );
+	if (new_size == 0) {
+		// This is a free request
+		efirc = bs->FreePool ( old_ptr );
+		return NULL;
 	}
+
+	// Some real deal?
+	efirc = bs->AllocatePool ( EfiBootServicesData, new_size, &new_ptr );
+	if (efirc != 0) {
+		assert (FALSE);
+while (loop) {}
+		return NULL;
+	}
+
+	if (old_ptr == NULL) {
+		// Just wanted some allocation, so we do that
+		return new_ptr;
+	}
+
+	// Well, really want to reallocate...
+	Head = BASE_CR (old_ptr, POOL_HEAD, Data);
+	if ((Head->Signature != POOL_HEAD_SIGNATURE) && (Head->Signature != POOLPAGE_HEAD_SIGNATURE)) {
+		while (loop) {}
+	}
+	if (Head->Size < new_size) {
+		memcpy ( new_ptr, old_ptr, Head->Size );
+	} else {
+		memcpy ( new_ptr, old_ptr, new_size );
+	}
+
+	efirc = bs->FreePool ( old_ptr );
+	if (efirc != 0) {
+		assert (FALSE);
+while (loop) {}
+		return new_ptr;
+	}
+
 	return new_ptr;
 }
 
@@ -583,11 +435,8 @@ void * realloc ( void *old_ptr, size_t new_size ) {
 void * malloc ( size_t size ) {
 	void *ptr;
 
-	ptr = realloc ( NULL, size );
-	if ( ASSERTED ) {
-		DBGC ( &heap, "Possible memory corruption detected from %p\n",
-		       __builtin_return_address ( 0 ) );
-	}
+	ptr = alloc_memblock ( size, 0, 0 );
+
 	return ptr;
 }
 
@@ -603,11 +452,9 @@ void * malloc ( size_t size ) {
  */
 void free ( void *ptr ) {
 
-	realloc ( ptr, 0 );
-	if ( ASSERTED ) {
-		DBGC ( &heap, "Possible memory corruption detected from %p\n",
-		       __builtin_return_address ( 0 ) );
-	}
+	if (ptr == NULL)
+		return;
+	free_memblock ( ptr, 1 );
 }
 
 /**
@@ -627,10 +474,7 @@ void * zalloc ( size_t size ) {
 	data = malloc ( size );
 	if ( data )
 		memset ( data, 0, size );
-	if ( ASSERTED ) {
-		DBGC ( &heap, "Possible memory corruption detected from %p\n",
-		       __builtin_return_address ( 0 ) );
-	}
+
 	return data;
 }
 
@@ -666,7 +510,9 @@ void mpopulate ( void *start, size_t len ) {
 static void init_heap ( void ) {
 	VALGRIND_MAKE_MEM_NOACCESS ( heap, sizeof ( heap ) );
 	VALGRIND_MAKE_MEM_NOACCESS ( &free_blocks, sizeof ( free_blocks ) );
-	mpopulate ( heap, sizeof ( heap ) );
+	// while (loop) {}
+	// InitializeSpinLock (&mMemLock);
+	// mpopulate ( heap, sizeof ( heap ) );
 }
 
 /** Memory allocator initialisation function */
