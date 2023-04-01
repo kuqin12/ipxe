@@ -36,8 +36,6 @@ FILE_LICENCE ( GPL2_OR_LATER_OR_UBDL );
 
 #include <ipxe/efi/efi.h>
 #include <ipxe/efi/Library/BaseLib.h>
-#include <ipxe/efi/Library/SynchronizationLib.h>
-SPIN_LOCK mMemLock;
 
 /** @file
  *
@@ -268,7 +266,7 @@ static void discard_all_cache ( void ) {
 	} while ( discarded );
 }
 
-extern volatile unsigned char loop;
+volatile unsigned char loop = 1;
 
 /**
  * Allocate a memory block
@@ -510,8 +508,6 @@ void mpopulate ( void *start, size_t len ) {
 static void init_heap ( void ) {
 	VALGRIND_MAKE_MEM_NOACCESS ( heap, sizeof ( heap ) );
 	VALGRIND_MAKE_MEM_NOACCESS ( &free_blocks, sizeof ( free_blocks ) );
-	// while (loop) {}
-	// InitializeSpinLock (&mMemLock);
 	// mpopulate ( heap, sizeof ( heap ) );
 }
 
