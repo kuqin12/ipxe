@@ -76,8 +76,6 @@ FILE_LICENCE ( GPL2_OR_LATER_OR_UBDL );
 	volatile _type *_io_addr =					      \
 		( ( volatile _type * ) ( intptr_t ) (io_addr) );	      \
 	_type _data = _func ( _io_addr );				      \
-	DBGIO ( "[" _prefix " %08lx] => %0" #_ndigits "llx\n",		      \
-		io_to_bus ( _io_addr ), ( unsigned long long ) _data );	      \
 	_data; } )
 
 /**
@@ -94,8 +92,6 @@ FILE_LICENCE ( GPL2_OR_LATER_OR_UBDL );
 	volatile _type *_io_addr =					      \
 		( ( volatile _type * ) ( intptr_t ) (io_addr) );	      \
 	_type _data = (data);						      \
-	DBGIO ( "[" _prefix " %08lx] <= %0" #_ndigits "llx\n",		      \
-		io_to_bus ( _io_addr ), ( unsigned long long ) _data );	      \
 	_func ( _data, _io_addr );					      \
 	} while ( 0 )
 
