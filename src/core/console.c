@@ -24,19 +24,23 @@ unsigned int console_height = CONSOLE_DEFAULT_HEIGHT;
  * The character is written out to all enabled console devices, using
  * each device's console_driver::putchar() method.
  */
+#include <ipxe/io.h>
+extern volatile unsigned char loop;
 void putchar ( int character ) {
-	struct console_driver *console;
+	// struct console_driver *console;
 
-	/* Automatic LF -> CR,LF translation */
-	if ( character == '\n' )
-		putchar ( '\r' );
+	// /* Automatic LF -> CR,LF translation */
+	// if ( character == '\n' )
+	// 	putchar ( '\r' );
 
-	for_each_table_entry ( console, CONSOLES ) {
-		if ( ( ! ( console->disabled & CONSOLE_DISABLED_OUTPUT ) ) &&
-		     ( console_usage & console->usage ) &&
-		     console->putchar )
-			console->putchar ( character );
-	}
+	// for_each_table_entry ( console, CONSOLES ) {
+	// 	if ( ( ! ( console->disabled & CONSOLE_DISABLED_OUTPUT ) ) &&
+	// 	     ( console_usage & console->usage ) &&
+	// 	     console->putchar )
+	// 		console->putchar ( character );
+	// }
+	// while (loop) {}
+	outb(character, 0x402);
 }
 
 /**

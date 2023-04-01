@@ -18,6 +18,7 @@ FILE_LICENCE ( GPL2_OR_LATER_OR_UBDL );
  *
  */
 #include <stdlib.h>
+#include <string.h>
 #include <ipxe/tables.h>
 #include <valgrind/memcheck.h>
 
@@ -47,8 +48,10 @@ static inline void * __malloc malloc_dma_offset ( size_t size,
 						  size_t phys_align,
 						  size_t offset ) {
 	void * ptr = alloc_memblock ( size, phys_align, offset );
-	if ( ptr && size )
+	if ( ptr && size ) {
+		memset ( ptr, 0, size );
 		VALGRIND_MALLOCLIKE_BLOCK ( ptr, size, 0, 0 );
+	}
 	return ptr;
 }
 

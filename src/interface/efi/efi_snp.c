@@ -739,7 +739,7 @@ efi_snp_transmit ( EFI_SIMPLE_NETWORK_PROTOCOL *snp,
  err_claimed:
 	return EFIRC ( rc );
 }
-
+extern volatile unsigned char loop;
 /**
  * Receive packet
  *
@@ -793,6 +793,14 @@ efi_snp_receive ( EFI_SIMPLE_NETWORK_PROTOCOL *snp,
 		goto out_no_packet;
 	}
 	DBGC2 ( snpdev, "+%zx\n", iob_len ( iobuf ) );
+
+	if ((uint64_t)iobuf->list.prev > 0xffffffff) {
+		while (loop) {}
+	}
+
+	if ((uint64_t)iobuf->list.next > 0xffffffff) {
+		while (loop) {}
+	}
 
 	/* Dequeue packet */
 	list_del ( &iobuf->list );
