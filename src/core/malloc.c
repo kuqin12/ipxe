@@ -376,8 +376,6 @@ void * realloc ( void *old_ptr, size_t new_size ) {
   POOL_HEAD  *Head;
 
 	if (new_size == 0 && old_ptr == NULL) {
-		assert (FALSE);
-while (loop) {}
 		return NULL;
 	}
 
@@ -397,6 +395,7 @@ while (loop) {}
 
 	if (old_ptr == NULL) {
 		// Just wanted some allocation, so we do that
+		memset ( new_ptr, 0, new_size );
 		return new_ptr;
 	}
 
@@ -433,8 +432,7 @@ while (loop) {}
 void * malloc ( size_t size ) {
 	void *ptr;
 
-	ptr = alloc_memblock ( size, 0, 0 );
-
+	ptr = realloc ( NULL, size );
 	return ptr;
 }
 
@@ -450,9 +448,7 @@ void * malloc ( size_t size ) {
  */
 void free ( void *ptr ) {
 
-	if (ptr == NULL)
-		return;
-	free_memblock ( ptr, 1 );
+	realloc ( ptr, 0 );
 }
 
 /**
