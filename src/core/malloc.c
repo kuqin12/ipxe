@@ -348,7 +348,16 @@ typedef struct {
 } POOL_HEAD;
 #define POOL_HEAD_SIGNATURE      SIGNATURE_32('p','h','d','0')
 #define POOLPAGE_HEAD_SIGNATURE  SIGNATURE_32('p','h','d','1')
+#define SIZE_OF_POOL_HEAD  OFFSET_OF(POOL_HEAD,Data)
 
+#define POOL_TAIL_SIGNATURE  SIGNATURE_32('p','t','a','l')
+typedef struct {
+  UINT32    Signature;
+  UINT32    Reserved;
+  UINTN     Size;
+} POOL_TAIL;
+
+#define POOL_OVERHEAD  (SIZE_OF_POOL_HEAD + sizeof(POOL_TAIL))
 /**
  * Reallocate memory
  *
@@ -404,8 +413,8 @@ while (loop) {}
 	if ((Head->Signature != POOL_HEAD_SIGNATURE) && (Head->Signature != POOLPAGE_HEAD_SIGNATURE)) {
 		while (loop) {}
 	}
-	if (Head->Size < new_size) {
-		memcpy ( new_ptr, old_ptr, Head->Size );
+	if ((Head->Size - POOL_OVERHEAD) < new_size) {
+		memcpy ( new_ptr, old_ptr, (Head->Size - POOL_OVERHEAD) );
 	} else {
 		memcpy ( new_ptr, old_ptr, new_size );
 	}
