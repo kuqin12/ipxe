@@ -1637,7 +1637,7 @@ static int efi_snp_probe ( struct net_device *netdev ) {
 	size_t path_prefix_len = 0;
 	unsigned int ifcnt;
 	unsigned int tag;
-	void *interface;
+	// void *interface;
 	EFI_STATUS efirc;
 	int rc;
 
@@ -1759,7 +1759,7 @@ static int efi_snp_probe ( struct net_device *netdev ) {
 	/* Install the SNP */
 	if ( ( efirc = bs->InstallMultipleProtocolInterfaces (
 			&snpdev->handle,
-			&efi_simple_network_protocol_guid, &snpdev->snp,
+			// &efi_simple_network_protocol_guid, &snpdev->snp,
 			&efi_device_path_protocol_guid, snpdev->path,
 			&efi_nii_protocol_guid, &snpdev->nii,
 			&efi_nii31_protocol_guid, &snpdev->nii,
@@ -1782,26 +1782,26 @@ static int efi_snp_probe ( struct net_device *netdev ) {
 	 * instances to prevent SnpDxe from attempting to bind to
 	 * them.
 	 */
-	if ( ( efirc = bs->OpenProtocol ( snpdev->handle,
-					  &efi_nii_protocol_guid, &interface,
-					  efi_image_handle, snpdev->handle,
-					  ( EFI_OPEN_PROTOCOL_BY_DRIVER |
-					    EFI_OPEN_PROTOCOL_EXCLUSIVE )))!=0){
-		rc = -EEFI ( efirc );
-		DBGC ( snpdev, "SNPDEV %p could not open NII protocol: %s\n",
-		       snpdev, strerror ( rc ) );
-		goto err_open_nii;
-	}
-	if ( ( efirc = bs->OpenProtocol ( snpdev->handle,
-					  &efi_nii31_protocol_guid, &interface,
-					  efi_image_handle, snpdev->handle,
-					  ( EFI_OPEN_PROTOCOL_BY_DRIVER |
-					    EFI_OPEN_PROTOCOL_EXCLUSIVE )))!=0){
-		rc = -EEFI ( efirc );
-		DBGC ( snpdev, "SNPDEV %p could not open NII31 protocol: %s\n",
-		       snpdev, strerror ( rc ) );
-		goto err_open_nii31;
-	}
+	// if ( ( efirc = bs->OpenProtocol ( snpdev->handle,
+	// 				  &efi_nii_protocol_guid, &interface,
+	// 				  efi_image_handle, snpdev->handle,
+	// 				  ( EFI_OPEN_PROTOCOL_BY_DRIVER |
+	// 				    EFI_OPEN_PROTOCOL_EXCLUSIVE )))!=0){
+	// 	rc = -EEFI ( efirc );
+	// 	DBGC ( snpdev, "SNPDEV %p could not open NII protocol: %s\n",
+	// 	       snpdev, strerror ( rc ) );
+	// 	goto err_open_nii;
+	// }
+	// if ( ( efirc = bs->OpenProtocol ( snpdev->handle,
+	// 				  &efi_nii31_protocol_guid, &interface,
+	// 				  efi_image_handle, snpdev->handle,
+	// 				  ( EFI_OPEN_PROTOCOL_BY_DRIVER |
+	// 				    EFI_OPEN_PROTOCOL_EXCLUSIVE )))!=0){
+	// 	rc = -EEFI ( efirc );
+	// 	DBGC ( snpdev, "SNPDEV %p could not open NII31 protocol: %s\n",
+	// 	       snpdev, strerror ( rc ) );
+	// 	goto err_open_nii31;
+	// }
 
 	/* Add as child of EFI parent device */
 	if ( ( rc = efi_child_add ( efidev->device, snpdev->handle ) ) != 0 ) {
@@ -1839,10 +1839,10 @@ static int efi_snp_probe ( struct net_device *netdev ) {
  err_efi_child_add:
 	bs->CloseProtocol ( snpdev->handle, &efi_nii31_protocol_guid,
 			    efi_image_handle, snpdev->handle );
- err_open_nii31:
+//  err_open_nii31:
 	bs->CloseProtocol ( snpdev->handle, &efi_nii_protocol_guid,
 			    efi_image_handle, snpdev->handle );
- err_open_nii:
+//  err_open_nii:
 	bs->UninstallMultipleProtocolInterfaces (
 			snpdev->handle,
 			&efi_simple_network_protocol_guid, &snpdev->snp,
