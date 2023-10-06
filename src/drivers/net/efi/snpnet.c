@@ -475,8 +475,7 @@ int snpnet_start ( struct efi_device *efidev ) {
 	if ( ( efirc = bs->OpenProtocol ( device,
 					  &efi_simple_network_protocol_guid,
 					  &interface, efi_image_handle, device,
-					  ( EFI_OPEN_PROTOCOL_BY_DRIVER |
-					    EFI_OPEN_PROTOCOL_EXCLUSIVE )))!=0){
+					  ( EFI_OPEN_PROTOCOL_BY_DRIVER )))!=0){
 		rc = -EEFI ( efirc );
 		DBGC ( device, "SNP %s cannot open SNP protocol: %s\n",
 		       efi_handle_name ( device ), strerror ( rc ) );
